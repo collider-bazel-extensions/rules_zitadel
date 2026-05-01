@@ -1,0 +1,25 @@
+"""Maintainer-only render flow."""
+
+load("@rules_helm//:defs.bzl", "helm_template")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# ---- 9.34.0 -----------------------------------------------------------------
+
+helm_template(
+    name = "render_zitadel_9_34_0",
+    chart = ["@zitadel_chart_9_34_0//:files"],
+    values = ["//config:zitadel-values.yaml"],
+    namespace = "zitadel",
+    release_name = "zitadel",
+)
+
+sh_binary(
+    name = "render_writeback_9_34_0",
+    srcs = ["writeback.sh"],
+    data = [":render_zitadel_9_34_0"],
+    args = [
+        "$(rootpath :render_zitadel_9_34_0)",
+        "private/manifests/zitadel.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)

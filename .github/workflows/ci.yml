@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  analysis:
+    name: bazel test (ubuntu-latest, analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-analysis
+          repository-cache: true
+
+      - name: bazel build //...
+        run: bazel build //...
+
+      - name: bazel test (analysis only)
+        run: bazel test //... --test_tag_filters=-manual --test_output=errors
+
+      - name: Smoke composition builds
+        run: bazel build //tests:smoke_test
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-testlogs-analysis
+          path: bazel-testlogs/
+          if-no-files-found: ignore
+
+  smoke:
+    # End-to-end: kind + Zitadel (single replica) + chart-bundled
+    # Postgres + init/setup Jobs. Smoke kubectl-runs a curl pod,
+    # fetches the OIDC discovery doc + JWKS.
+    name: smoke (ubuntu-latest, docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-smoke
+          repository-cache: true
+
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: bazel test //tests:smoke_test
+        # kind boot (~30s) + Zitadel image pull (~150 MB) + Postgres
+        # pull (~120 MB) + Postgres init + init Job DB migrations +
+        # setup Job signing-key generation + Zitadel pod startup
+        # probe (10 min grace). Cold runners can hit 8-10 minutes.
+        run: bazel test //tests:smoke_test --test_output=streamed --test_timeout=1500
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-testlogs-smoke
+          path: bazel-testlogs/
+          if-no-files-found: ignore

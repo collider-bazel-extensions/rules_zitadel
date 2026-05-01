@@ -1,0 +1,84 @@
+# Render-time values for rules_zitadel's pinned manifest.
+#
+# Smoke-fixture footprint: a single Zitadel Deployment + chart-
+# bundled Bitnami PostgreSQL StatefulSet (single replica). Three
+# Jobs (init / setup / cleanup) are rendered via the chart's
+# pre-install hook annotations; kubectl apply ignores helm hooks
+# so they're applied as regular Jobs alongside the Deployment.
+#
+# **NOT a production starting point.** Production deploys override
+# every credential, point at an external Postgres (or CockroachDB),
+# turn TLS back on with a real cert, and pivot to OIDC / SAML auth
+# instead of the hardcoded admin password baked in here.
+
+zitadel:
+  # 32-byte symmetric key Zitadel uses for column encryption (token
+  # signing keys, IDP secrets, etc.). The chart errors at template
+  # time if this is missing. Hardcoded for the smoke fixture;
+  # production wires this via a Secret + env-var ref.
+  masterkey: "MasterkeyNeedsToHave32Characters"
+  configmapConfig:
+    # Tell Zitadel where it's reachable from outside the pod. The
+    # in-cluster Service `zitadel.zitadel.svc.cluster.local:8080`
+    # is the right answer for a smoke fixture; production sets
+    # this to the public DNS name.
+    ExternalSecure: false
+    ExternalDomain: zitadel.zitadel.svc.cluster.local
+    ExternalPort: 8080
+    # TLS off for the smoke. Zitadel defaults to HTTPS-only; the
+    # chart wires self-signed certs via cert-manager when TLS is
+    # on, which is too much moving surface for a smoke. Production
+    # flips this to true with a real cert from cert-manager OR
+    # via Secret-mounted certificates.
+    TLS:
+      Enabled: false
+    # Bootstrap the first instance with a known admin user so the
+    # smoke can authenticate via the management API in v0.2+.
+    # v0.1's smoke only hits the unauthenticated OIDC discovery
+    # endpoint, so this isn't load-bearing yet.
+    FirstInstance:
+      Org:
+        Human:
+          Username: smoke-admin
+          Password: SmokeAdmin1!
+
+# Zitadel's `/debug/ready` readiness probe gates on DB migrations
+# (init Job) + signing keys / admin user (setup Job) being done.
+# The chart's default startup probe (failureThreshold=30,
+# periodSeconds=1) gives only 30s of grace — too short for cold
+# CI runs where image pulls + Postgres init + the migration chain
+# can take several minutes. Bump to 120 * 5s = 10 minutes.
+startupProbe:
+  enabled: true
+  periodSeconds: 5
+  failureThreshold: 120
+
+# Bundled Bitnami PostgreSQL subchart. The chart auto-wires the
+# DSN into Zitadel's config (host=zitadel-postgresql ...).
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: smoke-fixture-postgres
+    username: zitadel
+    password: smoke-fixture-zitadel
+    database: zitadel
+  primary:
+    # No PVC for the smoke — emptyDir is fine since we don't
+    # survive pod restart anyway. Same lesson rules_backstage
+    # learned.
+    persistence:
+      enabled: false
+    # The chart's `small` resourcesPreset reserves 256Mi memory +
+    # ephemeral-storage that kind's tight allocatable refuses
+    # to satisfy. `none` removes the resource block entirely.
+    resourcesPreset: "none"
+
+# Single replica.
+replicaCount: 1
+
+# Disable the separate "login" UI Deployment. Zitadel chart 9.x
+# splits the login flow into its own image / Deployment by default.
+# v0.1's smoke only hits the management API; the login UI isn't
+# on the critical path. Production keeps it enabled.
+login:
+  enabled: false
