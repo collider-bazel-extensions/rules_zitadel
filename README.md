@@ -3,18 +3,24 @@
 Hermetic [Zitadel](https://zitadel.com/) install for Bazel test
 compositions. Pure glue layer over
 [`rules_kubectl`](https://github.com/collider-bazel-extensions/rules_kubectl).
-Two install paths:
+Three install paths:
 
 - **`zitadel_install`** (v0.1) — Zitadel + chart-bundled Bitnami
   Postgres subchart. Single self-contained kubectl-apply.
 - **`zitadel_install_external_pg`** (v0.2) — Zitadel pointed at a
   hand-rolled standalone `postgres:18-alpine` Deployment. Drops
   the bundled subchart; closer to production shape.
+- **`zitadel_install_cnpg`** (v0.3) — Zitadel pointed at a
+  [CNPG](https://cloudnative-pg.io/)-managed `Cluster` CR. Most
+  production-shaped: HA-ready Postgres with operator-managed
+  lifecycle. Cross-rule composition with
+  [`rules_cloudnativepg`](https://github.com/collider-bazel-extensions/rules_cloudnativepg).
 
 ```python
 load("@rules_zitadel//:defs.bzl",
      "zitadel_install", "zitadel_health_check",
-     "zitadel_install_external_pg", "zitadel_health_check_external_pg")
+     "zitadel_install_external_pg", "zitadel_health_check_external_pg",
+     "zitadel_install_cnpg", "zitadel_health_check_cnpg")
 
 # Bundled Postgres (v0.1).
 zitadel_install(name = "zitadel_install_bin")
@@ -23,6 +29,10 @@ zitadel_health_check(name = "zitadel_health_bin")
 # External Postgres (v0.2 — standalone Deployment alongside Zitadel).
 zitadel_install_external_pg(name = "zitadel_install_external_pg_bin")
 zitadel_health_check_external_pg(name = "zitadel_health_external_pg_bin")
+
+# CNPG-managed Postgres (v0.3 — requires CNPG operator installed upstream).
+zitadel_install_cnpg(name = "zitadel_install_cnpg_bin")
+zitadel_health_check_cnpg(name = "zitadel_health_cnpg_bin")
 ```
 
 Zitadel is an open-source identity and access management server —
@@ -169,6 +179,57 @@ Wait shape is `wait_for_deployments = ["zitadel", "postgres"]`
 Deployments).
 
 ### `zitadel_health_check_external_pg`
+
+Pair with the install above. Same wait shape with `--timeout=0s`.
+
+### `zitadel_install_cnpg`
+
+```python
+zitadel_install_cnpg(
+    name = "zitadel_install_cnpg_bin",
+    namespace = "zitadel",        # default
+    wait_timeout = "900s",        # default
+)
+```
+
+Cross-rule composition with `rules_cloudnativepg`. Applies two
+manifests in a single `kubectl_apply`:
+
+1. **`@rules_zitadel//private/manifests:zitadel-db-cluster.yaml`** —
+   a CNPG `Cluster` CR (1 instance for the smoke fixture; production
+   overrides `instances: 3+`) plus a bootstrap credentials Secret.
+   The bootstrap owner is promoted to SUPERUSER via
+   `postInitApplicationSQL` so Zitadel migrations succeed.
+2. **`@rules_zitadel//private/manifests:zitadel-cnpg.yaml`** —
+   Zitadel chart re-rendered with `postgresql.enabled: false`,
+   pointing at `zitadel-db-rw.<namespace>.svc.cluster.local`.
+
+Wait shape: `wait_for_deployments = ["zitadel"]` (transitively
+gates on Cluster readiness via Zitadel's `/debug/ready` probe)
+and `wait_for_crds = ["clusters.postgresql.cnpg.io"]` (sanity
+check that the CNPG operator is installed).
+
+**Required upstream:** the CNPG operator must be installed before
+this macro runs. Wire `cloudnativepg_install` (from
+[`rules_cloudnativepg`](https://github.com/collider-bazel-extensions/rules_cloudnativepg))
+as an `itest_service` dep:
+
+```python
+cloudnativepg_install(name = "cnpg_install_bin")
+itest_service(name = "cnpg_svc", exe = ":cnpg_install_wrapper",
+              health_check = ":cnpg_health_wrapper",
+              deps = [":kind_svc"])
+
+zitadel_install_cnpg(name = "zitadel_install_cnpg_bin")
+itest_service(name = "zitadel_cnpg_svc",
+              exe = ":zitadel_install_cnpg_wrapper",
+              health_check = ":zitadel_health_cnpg_wrapper",
+              deps = [":cnpg_svc"])    # <-- chains on CNPG
+```
+
+See `tests/BUILD.bazel` for the full composition.
+
+### `zitadel_health_check_cnpg`
 
 Pair with the install above. Same wait shape with `--timeout=0s`.
 

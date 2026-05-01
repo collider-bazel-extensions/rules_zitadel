@@ -13,11 +13,14 @@ load("@rules_itest//:itest.bzl", "itest_service", "service_test")
 load("@rules_kind//:defs.bzl", "kind_cluster", "kind_health_check")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@rules_cloudnativepg//:defs.bzl", "cloudnativepg_health_check", "cloudnativepg_install")
 load(
     "@rules_zitadel//:defs.bzl",
     "zitadel_health_check",
+    "zitadel_health_check_cnpg",
     "zitadel_health_check_external_pg",
     "zitadel_install",
+    "zitadel_install_cnpg",
     "zitadel_install_external_pg",
 )
 load(":analysis_tests.bzl", "zitadel_install_test_suite")
@@ -142,6 +145,99 @@ service_test(
     name = "smoke_test_external_pg",
     services = [":zitadel_external_pg_svc"],
     test = ":smoke_test_external_pg_bin",
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+)
+
+# ---- CNPG smoke composition -------------------------------------------------
+# Cross-rule composition: rules_cloudnativepg's cloudnativepg_install
+# runs first (CNPG operator in cnpg-system), then zitadel_install_cnpg
+# applies a Cluster CR + Zitadel pointed at its rw Service.
+
+kind_cluster(name = "cluster_cnpg", k8s_version = "1.32")
+
+kind_health_check(name = "cluster_cnpg_health", cluster = ":cluster_cnpg")
+
+itest_service(
+    name = "kind_cnpg_svc",
+    exe = ":cluster_cnpg",
+    health_check = ":cluster_cnpg_health",
+    tags = ["manual"],
+)
+
+cloudnativepg_install(
+    name = "cnpg_install_bin",
+    tags = ["manual"],
+)
+
+cloudnativepg_health_check(
+    name = "cnpg_health_bin",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "cnpg_install_wrapper",
+    srcs = ["cnpg_install_wrapper.sh"],
+    data = [":cnpg_install_bin"],
+)
+
+sh_binary(
+    name = "cnpg_health_wrapper",
+    srcs = ["cnpg_health_wrapper.sh"],
+    data = [":cnpg_health_bin"],
+)
+
+itest_service(
+    name = "cnpg_svc",
+    exe = ":cnpg_install_wrapper",
+    deps = [":kind_cnpg_svc"],
+    health_check = ":cnpg_health_wrapper",
+    tags = ["manual"],
+)
+
+zitadel_install_cnpg(
+    name = "zitadel_install_cnpg_bin",
+    tags = ["manual"],
+)
+
+zitadel_health_check_cnpg(
+    name = "zitadel_health_cnpg_bin",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "zitadel_install_cnpg_wrapper",
+    srcs = ["install_wrapper_cnpg.sh"],
+    data = [":zitadel_install_cnpg_bin"],
+)
+
+sh_binary(
+    name = "zitadel_health_cnpg_wrapper",
+    srcs = ["health_wrapper_cnpg.sh"],
+    data = [":zitadel_health_cnpg_bin"],
+)
+
+itest_service(
+    name = "zitadel_cnpg_svc",
+    exe = ":zitadel_install_cnpg_wrapper",
+    deps = [":cnpg_svc"],
+    health_check = ":zitadel_health_cnpg_wrapper",
+    tags = ["manual"],
+)
+
+sh_test(
+    name = "smoke_test_cnpg_bin",
+    srcs = ["smoke_test_cnpg.sh"],
+    tags = ["manual"],
+)
+
+service_test(
+    name = "smoke_test_cnpg",
+    services = [":zitadel_cnpg_svc"],
+    test = ":smoke_test_cnpg_bin",
     tags = [
         "manual",
         "no-sandbox",

@@ -48,3 +48,29 @@ sh_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+# ---- 9.34.0 CNPG variant ----------------------------------------------------
+# Zitadel pointed at a CNPG-managed Cluster (see
+# private/manifests/zitadel-db-cluster.yaml — the Cluster CR is
+# hand-rolled, not chart-rendered). The render here is just the
+# Zitadel side with `postgresql.enabled: false` and the discrete
+# Database.Postgres.* fields pointed at zitadel-db-rw.
+
+helm_template(
+    name = "render_zitadel_cnpg_9_34_0",
+    chart = ["@zitadel_chart_9_34_0//:files"],
+    values = ["//config:zitadel-cnpg-values.yaml"],
+    namespace = "zitadel",
+    release_name = "zitadel",
+)
+
+sh_binary(
+    name = "render_writeback_cnpg_9_34_0",
+    srcs = ["writeback.sh"],
+    data = [":render_zitadel_cnpg_9_34_0"],
+    args = [
+        "$(rootpath :render_zitadel_cnpg_9_34_0)",
+        "private/manifests/zitadel-cnpg.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)

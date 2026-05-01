@@ -2,7 +2,7 @@
 
 module(
     name = "rules_zitadel",
-    version = "0.2.0",
+    version = "0.3.0",
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
@@ -51,3 +51,15 @@ register_toolchains(
 zitadel_chart = use_extension("//tools:extensions.bzl", "zitadel_chart", dev_dependency = True)
 zitadel_chart.version(version = "9.34.0")
 use_repo(zitadel_chart, "zitadel_chart_9_34_0")
+
+# ---- v0.3 smoke: CNPG operator dependency -----------------------------------
+# `zitadel_install_cnpg` requires the CNPG operator already installed.
+# rules_cloudnativepg ships the `cloudnativepg_install` macro; the
+# in-tree smoke chains it as an itest_service dep before applying the
+# Zitadel + Cluster manifests.
+bazel_dep(name = "rules_cloudnativepg", version = "0.1.0", dev_dependency = True)
+git_override(
+    module_name = "rules_cloudnativepg",
+    remote = "https://github.com/collider-bazel-extensions/rules_cloudnativepg",
+    commit = "f64b2419be8c97e42673939312d3353951925b72",  # v0.1.0
+)

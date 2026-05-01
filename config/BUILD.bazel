@@ -5,4 +5,5 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "zitadel-values.yaml",
     "zitadel-external-pg-values.yaml",
+    "zitadel-cnpg-values.yaml",
 ])

@@ -1,0 +1,55 @@
+---
+# CNPG Cluster CR for v0.3's `zitadel_install_cnpg` path.
+#
+# Single-instance cluster for the smoke fixture. Production
+# deploys override `instances: 3` (or higher), tune
+# `postgresql.parameters` per workload, configure backups via
+# `spec.backup`, and add anti-affinity (which the smoke skips
+# since kind is single-node).
+#
+# The CNPG operator is installed separately via
+# `cloudnativepg_install` (rules_cloudnativepg) — this file
+# only carries the Cluster CR + bootstrap credentials Secret.
+# Consumers wire the operator install as an `itest_service`
+# dep ahead of the Zitadel install.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: zitadel-db-app
+  namespace: zitadel
+type: kubernetes.io/basic-auth
+stringData:
+  username: zitadel
+  password: smoke-fixture-zitadel-cnpg
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: zitadel-db
+  namespace: zitadel
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.6
+  storage:
+    size: 512Mi
+    storageClass: standard
+  postgresql:
+    parameters:
+      shared_buffers: "64MB"
+      max_connections: "100"
+  bootstrap:
+    initdb:
+      database: zitadel
+      owner: zitadel
+      secret:
+        name: zitadel-db-app
+      # Zitadel's Admin role needs CREATE / ALTER / GRANT
+      # privileges to run schema migrations. CNPG's bootstrap
+      # owner is a regular user by default — promote to
+      # SUPERUSER so the migrations succeed without a separate
+      # admin account. NOT prod-safe (the app user shouldn't
+      # be a superuser); production splits Admin (DDL) from
+      # User (DML) into separate roles.
+      postInitApplicationSQL:
+        - ALTER ROLE zitadel WITH SUPERUSER

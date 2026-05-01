@@ -1,0 +1,65 @@
+# Render-time values for rules_zitadel's CNPG-Postgres variant.
+#
+# Same Zitadel chart (9.34.0) but pointed at a CNPG-managed
+# Cluster instead of a bundled subchart or a hand-rolled
+# Deployment. Service `zitadel-db-rw.zitadel.svc.cluster.local`
+# is CNPG's read-write Service (auto-routes to the active
+# primary). With `instances: 1` in the smoke fixture the rw
+# Service always points at `zitadel-db-1`; production with
+# multi-instance clusters survives primary failover via the
+# same Service name.
+#
+# Credentials match the `zitadel-db-app` Secret declared in
+# private/manifests/zitadel-db-cluster.yaml. The bootstrap.
+# initdb.owner role is promoted to SUPERUSER via
+# postInitApplicationSQL so Zitadel's migrations can run as
+# Admin. NOT prod-safe — production splits Admin/User roles.
+
+zitadel:
+  masterkey: "MasterkeyNeedsToHave32Characters"
+  configmapConfig:
+    ExternalSecure: false
+    ExternalDomain: zitadel.zitadel.svc.cluster.local
+    ExternalPort: 8080
+    TLS:
+      Enabled: false
+    Database:
+      Postgres:
+        Host: zitadel-db-rw
+        Port: 5432
+        Database: zitadel
+        MaxOpenConns: 5
+        MaxIdleConns: 2
+        MaxConnLifetime: 1h
+        MaxConnIdleTime: 5m
+        User:
+          Username: zitadel
+          Password: smoke-fixture-zitadel-cnpg
+          SSL:
+            Mode: disable
+        Admin:
+          Username: zitadel
+          Password: smoke-fixture-zitadel-cnpg
+          ExistingDatabase: zitadel
+          SSL:
+            Mode: disable
+    FirstInstance:
+      Org:
+        Human:
+          Username: smoke-admin
+          Password: SmokeAdmin1!
+
+# Same 10-minute startup grace as the other variants — DB
+# migrations + signing-key generation are equally slow.
+startupProbe:
+  enabled: true
+  periodSeconds: 5
+  failureThreshold: 120
+
+# Bundled subchart off; we point at the CNPG-managed Cluster.
+postgresql:
+  enabled: false
+
+replicaCount: 1
+login:
+  enabled: false

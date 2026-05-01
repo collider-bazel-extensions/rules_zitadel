@@ -90,3 +90,34 @@ jobs:
           name: bazel-testlogs-smoke-external-pg
           path: bazel-testlogs/
           if-no-files-found: ignore
+
+  smoke_cnpg:
+    # Cross-rule composition: rules_cloudnativepg's CNPG operator +
+    # rules_zitadel's CNPG-Cluster install path. Most
+    # production-shaped of the three.
+    name: smoke (ubuntu-latest, CNPG)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-smoke-cnpg
+          repository-cache: true
+
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: bazel test //tests:smoke_test_cnpg
+        # CNPG operator + Cluster initdb + Zitadel install + init/
+        # setup Jobs + readiness. Bumped vs the other variants for
+        # the additional CNPG image pull.
+        run: bazel test //tests:smoke_test_cnpg --test_output=streamed --test_timeout=1800
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-testlogs-smoke-cnpg
+          path: bazel-testlogs/
+          if-no-files-found: ignore
