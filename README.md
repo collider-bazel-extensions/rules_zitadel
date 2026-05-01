@@ -162,6 +162,73 @@ candidate.
 
 ---
 
+## Gotchas
+
+Three things that will bite anyone bumping the chart or
+debugging an install failure. Captured here so future-us doesn't
+re-discover them in CI.
+
+### `pre-install` Job hooks are silently ignored by `kubectl apply`
+
+The chart renders three Jobs — `zitadel-init` (DB schema
+migrations), `zitadel-setup` (signing keys + initial admin user),
+`zitadel-cleanup` (post-uninstall housekeeping) — annotated
+`helm.sh/hook: pre-install,pre-upgrade`. Helm CLI honors those
+hooks and runs the Jobs to completion before applying the rest of
+the manifest. **`kubectl apply -f` doesn't honor helm hooks at
+all** — the Jobs apply as regular Jobs alongside the Deployment.
+
+Fine for our purposes: Zitadel's `/debug/ready` readiness probe
+gates on init + setup completing, so `wait_for_deployments =
+["zitadel"]` transitively waits on the Jobs.
+
+If you ever need to gate explicitly (e.g. fail fast on a migration
+error rather than waiting out the startupProbe):
+`kubectl wait job/zitadel-init --for=condition=Complete` works
+post-apply.
+
+### The chart's default `startupProbe` is too short for cold CI
+
+Default: `failureThreshold: 30`, `periodSeconds: 1` — 30 seconds
+of grace before k8s starts respawning the container. Cold CI runs
+need much longer:
+
+- Zitadel image pull: ~150 MB
+- Postgres image pull: ~120 MB
+- Postgres init (initdb)
+- `zitadel-init` Job DB migration
+- `zitadel-setup` Job signing-key generation
+- Zitadel server boot + `/debug/ready` flips to 200
+
+Realistically 5–10 minutes on a cold-pull runner. The Zitadel pod
+will crashloop indefinitely if the startupProbe fires before
+setup is done.
+
+The rendered values bump it to `failureThreshold: 120`,
+`periodSeconds: 5` (10 minutes total).
+
+> **Subtle gotcha within this gotcha:** `startupProbe` is at the
+> ROOT of `values.yaml`, NOT nested under `zitadel:`. The chart
+> reads `.Values.startupProbe.*` directly. With the override
+> nested under `zitadel.startupProbe` it silently doesn't apply
+> — caught only by re-rendering and grepping the output.
+
+### `MasterKey` is required at template time
+
+Zitadel uses a 32-byte symmetric key for column encryption (token
+signing keys, IDP secrets, etc.). The chart errors at
+`helm template` time if `zitadel.masterkey` is missing or not
+exactly 32 characters — not at runtime, not at install. The
+smoke fixture hardcodes a constant string. **Production wires this
+via a Secret + env-var ref**:
+
+```yaml
+zitadel:
+  masterkeyExistingSecret: "zitadel-masterkey"   # existing Secret with key `masterkey`
+```
+
+---
+
 ## Hermeticity exceptions
 
 | Component | Status | Notes |
