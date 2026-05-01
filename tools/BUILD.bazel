@@ -23,3 +23,28 @@ sh_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+# ---- 9.34.0 external-Postgres variant ---------------------------------------
+# Same chart, different values. `postgresql.enabled: false` drops
+# the bundled Bitnami subchart; Zitadel is pointed at the
+# separately-deployed Postgres in private/manifests/postgres-standalone.yaml
+# via the chart's discrete Database.Postgres.* configmap fields.
+
+helm_template(
+    name = "render_zitadel_external_pg_9_34_0",
+    chart = ["@zitadel_chart_9_34_0//:files"],
+    values = ["//config:zitadel-external-pg-values.yaml"],
+    namespace = "zitadel",
+    release_name = "zitadel",
+)
+
+sh_binary(
+    name = "render_writeback_external_pg_9_34_0",
+    srcs = ["writeback.sh"],
+    data = [":render_zitadel_external_pg_9_34_0"],
+    args = [
+        "$(rootpath :render_zitadel_external_pg_9_34_0)",
+        "private/manifests/zitadel-external-pg.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)

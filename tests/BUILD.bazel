@@ -13,7 +13,13 @@ load("@rules_itest//:itest.bzl", "itest_service", "service_test")
 load("@rules_kind//:defs.bzl", "kind_cluster", "kind_health_check")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("@rules_zitadel//:defs.bzl", "zitadel_health_check", "zitadel_install")
+load(
+    "@rules_zitadel//:defs.bzl",
+    "zitadel_health_check",
+    "zitadel_health_check_external_pg",
+    "zitadel_install",
+    "zitadel_install_external_pg",
+)
 load(":analysis_tests.bzl", "zitadel_install_test_suite")
 
 # ---- analysis ---------------------------------------------------------------
@@ -73,6 +79,69 @@ service_test(
     name = "smoke_test",
     services = [":zitadel_svc"],
     test = ":smoke_test_bin",
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+)
+
+# ---- external-Postgres smoke composition -----------------------------------
+# Separate kind cluster — co-locating with the bundled smoke would
+# clash on the `zitadel` namespace's StatefulSet name and the
+# `postgres` Deployment.
+
+kind_cluster(name = "cluster_external_pg", k8s_version = "1.32")
+
+kind_health_check(name = "cluster_external_pg_health", cluster = ":cluster_external_pg")
+
+itest_service(
+    name = "kind_external_pg_svc",
+    exe = ":cluster_external_pg",
+    health_check = ":cluster_external_pg_health",
+    tags = ["manual"],
+)
+
+zitadel_install_external_pg(
+    name = "zitadel_install_external_pg_bin",
+    tags = ["manual"],
+)
+
+zitadel_health_check_external_pg(
+    name = "zitadel_health_external_pg_bin",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "zitadel_install_external_pg_wrapper",
+    srcs = ["install_wrapper_external_pg.sh"],
+    data = [":zitadel_install_external_pg_bin"],
+)
+
+sh_binary(
+    name = "zitadel_health_external_pg_wrapper",
+    srcs = ["health_wrapper_external_pg.sh"],
+    data = [":zitadel_health_external_pg_bin"],
+)
+
+itest_service(
+    name = "zitadel_external_pg_svc",
+    exe = ":zitadel_install_external_pg_wrapper",
+    deps = [":kind_external_pg_svc"],
+    health_check = ":zitadel_health_external_pg_wrapper",
+    tags = ["manual"],
+)
+
+sh_test(
+    name = "smoke_test_external_pg_bin",
+    srcs = ["smoke_test_external_pg.sh"],
+    tags = ["manual"],
+)
+
+service_test(
+    name = "smoke_test_external_pg",
+    services = [":zitadel_external_pg_svc"],
+    test = ":smoke_test_external_pg_bin",
     tags = [
         "manual",
         "no-sandbox",

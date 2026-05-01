@@ -1,0 +1,104 @@
+---
+# Standalone Postgres for v0.2's external-DB Zitadel render.
+#
+# Deliberately hand-rolled rather than rendered from a chart:
+#   - Bitnami's chart repo (charts.bitnami.com) returns 403 as
+#     of 2026-04 — the project pivoted to a paid model. The
+#     bundled subchart inside the Zitadel chart .tgz still works
+#     for v0.1, but v0.2 wants to demonstrate the external-DB
+#     shape without a chart dependency.
+#   - Hand-rolled is simpler / more transparent / smaller. ~80
+#     lines vs the bundled chart's ~700.
+#
+# Production deploys override this entirely — point Zitadel at an
+# operator-managed Postgres (rules_cloudnativepg in v0.3) or a
+# cloud-managed Postgres (RDS / Cloud SQL / etc.).
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: zitadel
+type: Opaque
+stringData:
+  # Postgres superuser password. Used by Zitadel as both `User` and
+  # `Admin` (the smoke fixture doesn't bother with separate Zitadel-
+  # role + privileges). Production splits these.
+  POSTGRES_PASSWORD: smoke-fixture-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: zitadel
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: zitadel
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: zitadel
+            # `postgres` image's initdb runs as root inside the
+            # container by default; PGDATA needs an explicit
+            # subdirectory so the volume mount can be used as
+            # PGDATA root without initdb failing on lost+found
+            # or other root-owned files. emptyDir is empty so
+            # this isn't strictly required here, but it's the
+            # idiomatic shape and matches what production PVC-
+            # backed deployments need.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - postgres
+                - -d
+                - zitadel
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+      volumes:
+        # emptyDir is fine for a smoke fixture that doesn't survive
+        # pod restart. Production swaps in a PVC + StorageClass.
+        - name: data
+          emptyDir: {}

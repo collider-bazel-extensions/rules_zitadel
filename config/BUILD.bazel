@@ -1,5 +1,8 @@
-"""The values file is exported so consumers can inspect / extend it."""
+"""Values files exported so consumers can inspect / extend them."""
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["zitadel-values.yaml"])
+exports_files([
+    "zitadel-values.yaml",
+    "zitadel-external-pg-values.yaml",
+])

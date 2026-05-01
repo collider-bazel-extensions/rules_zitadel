@@ -38,9 +38,8 @@ jobs:
 
   smoke:
     # End-to-end: kind + Zitadel (single replica) + chart-bundled
-    # Postgres + init/setup Jobs. Smoke kubectl-runs a curl pod,
-    # fetches the OIDC discovery doc + JWKS.
-    name: smoke (ubuntu-latest, docker)
+    # Postgres + init/setup Jobs.
+    name: smoke (ubuntu-latest, bundled Postgres)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,10 +53,6 @@ jobs:
         run: docker version
 
       - name: bazel test //tests:smoke_test
-        # kind boot (~30s) + Zitadel image pull (~150 MB) + Postgres
-        # pull (~120 MB) + Postgres init + init Job DB migrations +
-        # setup Job signing-key generation + Zitadel pod startup
-        # probe (10 min grace). Cold runners can hit 8-10 minutes.
         run: bazel test //tests:smoke_test --test_output=streamed --test_timeout=1500
 
       - name: Upload test logs on failure
@@ -65,5 +60,33 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bazel-testlogs-smoke
+          path: bazel-testlogs/
+          if-no-files-found: ignore
+
+  smoke_external_pg:
+    # End-to-end: kind + Zitadel + standalone Postgres Deployment
+    # (postgres:18-alpine, hand-rolled). Same OIDC round-trip as
+    # the bundled smoke; proves the external-DB shape end-to-end.
+    name: smoke (ubuntu-latest, external Postgres)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-smoke-external-pg
+          repository-cache: true
+
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: bazel test //tests:smoke_test_external_pg
+        run: bazel test //tests:smoke_test_external_pg --test_output=streamed --test_timeout=1500
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-testlogs-smoke-external-pg
           path: bazel-testlogs/
           if-no-files-found: ignore

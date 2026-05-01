@@ -1,0 +1,64 @@
+# Render-time values for rules_zitadel's external-Postgres variant.
+#
+# Same Zitadel chart (9.34.0) as v0.1 but with `postgresql.enabled:
+# false` — the bundled Bitnami subchart is dropped and Zitadel is
+# pointed at a separately-deployed Postgres pod
+# (private/manifests/postgres-standalone.yaml).
+#
+# Service name `postgres.zitadel.svc.cluster.local` resolves the
+# in-cluster Postgres Service. The chart's ConfigMap renders the
+# discrete `Database.Postgres.{Host, Port, ...}` fields; Zitadel
+# reads them at startup.
+
+zitadel:
+  masterkey: "MasterkeyNeedsToHave32Characters"
+  configmapConfig:
+    ExternalSecure: false
+    ExternalDomain: zitadel.zitadel.svc.cluster.local
+    ExternalPort: 8080
+    TLS:
+      Enabled: false
+    # Discrete-fields mode for the DB config (the historical /
+    # legacy mode the chart docs describe as still fully
+    # supported). Production uses DSN-mode with a Secret-mounted
+    # env var; the smoke uses discrete fields for legibility.
+    Database:
+      Postgres:
+        Host: postgres
+        Port: 5432
+        Database: zitadel
+        MaxOpenConns: 5
+        MaxIdleConns: 2
+        MaxConnLifetime: 1h
+        MaxConnIdleTime: 5m
+        User:
+          Username: postgres
+          Password: smoke-fixture-postgres
+          SSL:
+            Mode: disable
+        Admin:
+          Username: postgres
+          Password: smoke-fixture-postgres
+          ExistingDatabase: zitadel
+          SSL:
+            Mode: disable
+    FirstInstance:
+      Org:
+        Human:
+          Username: smoke-admin
+          Password: SmokeAdmin1!
+
+# Same 10-minute startup grace as v0.1 — DB migrations and signing-
+# key generation are equally slow against an external Postgres.
+startupProbe:
+  enabled: true
+  periodSeconds: 5
+  failureThreshold: 120
+
+# THE key change: bundled Postgres subchart off.
+postgresql:
+  enabled: false
+
+replicaCount: 1
+login:
+  enabled: false

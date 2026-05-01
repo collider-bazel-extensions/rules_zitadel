@@ -2,23 +2,36 @@
 
 Hermetic [Zitadel](https://zitadel.com/) install for Bazel test
 compositions. Pure glue layer over
-[`rules_kubectl`](https://github.com/collider-bazel-extensions/rules_kubectl) —
-`zitadel_install` is a macro emitting a `kubectl_apply` target
-pre-configured with Zitadel's pinned manifest and the right wait
-shape (Zitadel Deployment + chart-bundled Postgres StatefulSet).
+[`rules_kubectl`](https://github.com/collider-bazel-extensions/rules_kubectl).
+Two install paths:
+
+- **`zitadel_install`** (v0.1) — Zitadel + chart-bundled Bitnami
+  Postgres subchart. Single self-contained kubectl-apply.
+- **`zitadel_install_external_pg`** (v0.2) — Zitadel pointed at a
+  hand-rolled standalone `postgres:18-alpine` Deployment. Drops
+  the bundled subchart; closer to production shape.
 
 ```python
-load("@rules_zitadel//:defs.bzl", "zitadel_install", "zitadel_health_check")
+load("@rules_zitadel//:defs.bzl",
+     "zitadel_install", "zitadel_health_check",
+     "zitadel_install_external_pg", "zitadel_health_check_external_pg")
 
-zitadel_install(name = "zitadel_install_bin")          # default ns: zitadel
+# Bundled Postgres (v0.1).
+zitadel_install(name = "zitadel_install_bin")
 zitadel_health_check(name = "zitadel_health_bin")
+
+# External Postgres (v0.2 — standalone Deployment alongside Zitadel).
+zitadel_install_external_pg(name = "zitadel_install_external_pg_bin")
+zitadel_health_check_external_pg(name = "zitadel_health_external_pg_bin")
 ```
 
-That's the whole API. Zitadel is an open-source identity and
-access management server — OIDC + SAML + management gRPC API,
-organizations / projects / users, asymmetric signing keys for
-issued tokens. v0.1's smoke fetches the OIDC discovery document
-and the JWKS, asserting the issuer + signing keys are reachable.
+Zitadel is an open-source identity and access management server —
+OIDC + SAML + management gRPC API, organizations / projects /
+users, asymmetric signing keys for issued tokens. The smoke
+fetches the OIDC discovery document and the JWKS, asserting the
+issuer + signing keys are reachable. Same smoke for both install
+paths — Zitadel's HTTP API is identical regardless of which DB
+is behind it.
 
 **Pinned versions:** Zitadel helm chart `9.34.0` (Zitadel
 `v4.13.0`). The chart bundles Bitnami's `postgresql` subchart at
@@ -129,6 +142,35 @@ Expands to a `kubectl_apply(...)` target that:
 
 Drops into `itest_service.health_check`. Same wait shape with
 `--timeout=0s`.
+
+### `zitadel_install_external_pg`
+
+```python
+zitadel_install_external_pg(
+    name = "zitadel_install_external_pg_bin",
+    namespace = "zitadel",        # default
+    wait_timeout = "900s",        # default
+)
+```
+
+Same shape as `zitadel_install` but applies **two** manifests in
+a single `kubectl_apply` call:
+
+1. `@rules_zitadel//private/manifests:postgres-standalone.yaml` —
+   a hand-rolled `postgres:18-alpine` Deployment + Service +
+   Secret in the same namespace as Zitadel.
+2. `@rules_zitadel//private/manifests:zitadel-external-pg.yaml` —
+   Zitadel chart re-rendered with `postgresql.enabled: false` and
+   the discrete `Database.Postgres.{Host, Port, ...}` fields
+   pointed at the standalone Postgres Service.
+
+Wait shape is `wait_for_deployments = ["zitadel", "postgres"]`
+(no StatefulSet here — both Postgres and Zitadel are
+Deployments).
+
+### `zitadel_health_check_external_pg`
+
+Pair with the install above. Same wait shape with `--timeout=0s`.
 
 ---
 

@@ -73,3 +73,73 @@ def zitadel_health_check(
         wait_for_crds = list(extra_crds),
         **kwargs
     )
+
+# ---- v0.2: external Postgres (drop bundled subchart) ------------------------
+# Same Zitadel chart 9.34.0 but with `postgresql.enabled: false`.
+# Zitadel is pointed at a separately-deployed standalone Postgres
+# Deployment (`postgres` Service in the same namespace, hand-rolled
+# in private/manifests/postgres-standalone.yaml). Production-shape
+# closer than v0.1's bundled subchart — operators typically
+# external-DB. v0.3 swaps the hand-rolled Postgres for a
+# CNPG-managed Cluster (rules_cloudnativepg compose).
+_ZITADEL_EXTERNAL_PG_DEPLOYS = [
+    "zitadel",
+    "postgres",
+]
+
+def zitadel_install_external_pg(
+        name,
+        namespace = "zitadel",
+        wait_timeout = "900s",
+        **kwargs):
+    """Apply Zitadel + a hand-rolled standalone Postgres in
+    `namespace` and block until both Deployments are Ready before
+    idling.
+
+    Drops into `itest_service.exe`. Same wait_timeout as
+    `zitadel_install` (15 min) — DB migrations + setup are equally
+    slow against an external Postgres. The chart's
+    `postgresql.enabled: false` plus the hand-rolled Postgres
+    means there's no chart-bundled StatefulSet here; both Postgres
+    and Zitadel are Deployments.
+    """
+    extra_deploys = kwargs.pop("wait_for_deployments", [])
+    extra_rollouts = kwargs.pop("wait_for_rollouts", [])
+    extra_crds = kwargs.pop("wait_for_crds", [])
+    kubectl_apply(
+        name = name,
+        # Apply Postgres first so the Service / pod is creating
+        # before Zitadel's init Job tries to connect. Apply order
+        # within a single kubectl_apply -f -f isn't strictly
+        # ordered (kubectl batches), but the manifest sequence
+        # at least communicates intent.
+        manifests = [
+            "@rules_zitadel//private/manifests:postgres-standalone.yaml",
+            "@rules_zitadel//private/manifests:zitadel-external-pg.yaml",
+        ],
+        namespace = namespace,
+        create_namespace = True,
+        server_side = True,
+        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + list(extra_deploys),
+        wait_for_rollouts = list(extra_rollouts),
+        wait_for_crds = list(extra_crds),
+        wait_timeout = wait_timeout,
+        **kwargs
+    )
+
+def zitadel_health_check_external_pg(
+        name,
+        namespace = "zitadel",
+        **kwargs):
+    """Readiness probe paired with `zitadel_install_external_pg`."""
+    extra_deploys = kwargs.pop("wait_for_deployments", [])
+    extra_rollouts = kwargs.pop("wait_for_rollouts", [])
+    extra_crds = kwargs.pop("wait_for_crds", [])
+    kubectl_apply_health_check(
+        name = name,
+        namespace = namespace,
+        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + list(extra_deploys),
+        wait_for_rollouts = list(extra_rollouts),
+        wait_for_crds = list(extra_crds),
+        **kwargs
+    )
