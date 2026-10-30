@@ -31,7 +31,7 @@ zitadel_install_test_suite(name = "zitadel_install_analysis")
 
 # ---- smoke composition ------------------------------------------------------
 
-kind_cluster(name = "cluster", k8s_version = "1.32")
+kind_cluster(name = "cluster", k8s_version = "1.35")
 
 kind_health_check(name = "cluster_health", cluster = ":cluster")
 
@@ -94,7 +94,7 @@ service_test(
 # clash on the `zitadel` namespace's StatefulSet name and the
 # `postgres` Deployment.
 
-kind_cluster(name = "cluster_external_pg", k8s_version = "1.32")
+kind_cluster(name = "cluster_external_pg", k8s_version = "1.35")
 
 kind_health_check(name = "cluster_external_pg_health", cluster = ":cluster_external_pg")
 
@@ -157,7 +157,7 @@ service_test(
 # runs first (CNPG operator in cnpg-system), then zitadel_install_cnpg
 # applies a Cluster CR + Zitadel pointed at its rw Service.
 
-kind_cluster(name = "cluster_cnpg", k8s_version = "1.32")
+kind_cluster(name = "cluster_cnpg", k8s_version = "1.35")
 
 kind_health_check(name = "cluster_cnpg_health", cluster = ":cluster_cnpg")
 
