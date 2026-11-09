@@ -464,3 +464,7 @@ isolation."
 4. **Default versions**: v4.14.0 (latest stable v4) and v3.4.9 (latest
    v3) in the test matrix. Toolchain code to be written.
 5. **Platforms**: linux x86_64, darwin arm64/x86_64.
+
+## Release archive contents (v0.3.1)
+
+`tests/` and `tools/` are `export-ignore` (`.gitattributes`): their packages load dev-only modules, which made `@rules_zitadel//...` unloadable for consumers. GitHub's tag tarballs honour it; a `git_override` clone still contains them. `REPO.bazel` `ignore_directories` isn't used because it would also hide them from this repo's own `bazel test`. CI's `consumer` job (`.github/consumer/check.sh`) queries `//...` from the commit's `git archive`. Same fix as rules_kubectl#5 / rules_atlas#12.
