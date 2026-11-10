@@ -1,0 +1,29 @@
+# Render-time values for rules_zitadel's Login V2 manifest
+# (private/manifests/zitadel-login.yaml), layered on top of
+# zitadel-values.yaml and rendered with only the chart's login
+# templates (`--show-only`).
+#
+# Zitadel v4 defaults a new instance to Login V2
+# (DefaultInstance.Features.LoginV2.Required: true), so every
+# browser sign-in redirects to /ui/v2/login/..., which only this
+# separate Next.js app serves. The chart wires everything the app
+# needs from the main values: NEXT_PUBLIC_BASE_PATH=/ui/v2/login,
+# the `login-client` PAT the setup Job writes (FirstInstance's
+# default Org.LoginClient), and CUSTOM_REQUEST_HEADERS carrying
+# ExternalDomain as Host. Those inputs are the same in all three
+# variants' values, so one login render serves all of them.
+
+login:
+  enabled: true
+  image:
+    # Pinned by digest (checked against ghcr.io) so clusters that
+    # admit only pinned digests can run it.
+    tag: "v4.13.0@sha256:b1048d2652988a32518d5e4a26eecea0dd1db0792e144bd9715c7b96fdf3b1fd"
+
+tools:
+  wait4x:
+    image:
+      # The login Deployment's `wait-for-zitadel` init container
+      # (the chart has no switch for it). Pinned by digest (checked
+      # against docker.io) for the same reason.
+      tag: "3.6@sha256:bec7ac18547781d854562c3729d3195c3880116d6758c49fdf4573ad58805f14"

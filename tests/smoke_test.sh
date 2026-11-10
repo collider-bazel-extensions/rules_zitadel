@@ -84,4 +84,50 @@ if ! grep -q "\"keys\":" <<<"$jwks_resp"; then
   exit 1
 fi
 
-echo "smoke_test: OK — Zitadel OIDC discovery + JWKS round-tripped (init + setup + signing keys all live)"
+# Login V2. Zitadel v4 defaults a new instance to Login V2, so the
+# authorize endpoint redirects browsers to /ui/v2/login/..., which
+# only the separate zitadel-login app serves. Ask for an authorize
+# redirect as the console would (its client id is in the console's
+# environment.json), then fetch the redirect target from the
+# zitadel-login Service, as an ingress routing /ui/v2/login would.
+echo "smoke_test: Login V2 authorize redirect"
+env_json=$("${KCTL[@]}" -n "$NS" exec zitadel-curl -- \
+    curl -s -H "Host: ${ZITADEL_HOST}" \
+    "http://${ZITADEL_HOST}:8080/ui/console/assets/environment.json" 2>/dev/null || true)
+client_id=$(sed -n 's/.*"clientid": *"\([^"]*\)".*/\1/p' <<<"$env_json")
+if [[ -z "$client_id" ]]; then
+  echo "smoke_test: FAIL — no console clientid in environment.json" >&2
+  echo "$env_json" >&2
+  exit 1
+fi
+redirect_uri="http://${ZITADEL_HOST}:8080/ui/console/auth/callback"
+challenge="E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+authz_resp=$("${KCTL[@]}" -n "$NS" exec zitadel-curl -- \
+    curl -s -o /dev/null -w "HTTP %{http_code}\nLocation: %{redirect_url}\n" \
+    -H "Host: ${ZITADEL_HOST}" \
+    "http://${ZITADEL_HOST}:8080/oauth/v2/authorize?client_id=${client_id}&redirect_uri=${redirect_uri}&response_type=code&scope=openid&code_challenge=${challenge}&code_challenge_method=S256" 2>/dev/null || true)
+login_url=$(sed -n 's/^Location: //p' <<<"$authz_resp")
+login_path="/${login_url#*://*/}"
+if [[ "$login_path" != /ui/v2/login/* ]]; then
+  echo "smoke_test: FAIL — authorize did not redirect to /ui/v2/login" >&2
+  echo "$authz_resp" >&2
+  exit 1
+fi
+# --connect-to plays the ingress: requests for the external host go to
+# the zitadel-login Service, and -L follows the app's own redirects
+# (e.g. on to its loginname step), which stay under /ui/v2/login.
+echo "smoke_test: GET ${login_path%%\?*} from the zitadel-login Service"
+login_resp=$("${KCTL[@]}" -n "$NS" exec zitadel-curl -- \
+    curl -sL --max-redirs 5 -w "\nHTTP %{http_code}\nURL %{url_effective}\n" \
+    --connect-to "${ZITADEL_HOST}:8080:zitadel-login.zitadel.svc.cluster.local:3000" \
+    "http://${ZITADEL_HOST}:8080${login_path}" 2>/dev/null || true)
+final_path="/$(sed -n 's/^URL [a-z]*:\/\/[^/]*\///p' <<<"$login_resp")"
+if ! grep -q "^HTTP 200\$" <<<"$login_resp" || ! grep -qi "<html" <<<"$login_resp" \
+    || [[ "$final_path" != /ui/v2/login/* ]]; then
+  echo "smoke_test: FAIL — the login app did not serve ${login_path%%\?*} (HTTP 200 HTML under /ui/v2/login)" >&2
+  tail -c 2000 <<<"$login_resp" >&2
+  exit 1
+fi
+echo "smoke_test: login app served ${final_path%%\?*}"
+
+echo "smoke_test: OK — Zitadel OIDC discovery + JWKS round-tripped (init + setup + signing keys all live), Login V2 served"

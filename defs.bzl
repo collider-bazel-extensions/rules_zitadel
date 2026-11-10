@@ -25,9 +25,29 @@ _ZITADEL_ROLLOUTS = [
     "sts/zitadel-postgresql",
 ]
 
+# Login V2 (`login = True`, the default on every install macro).
+# Zitadel v4 defaults a new instance to Login V2, so browser sign-in
+# redirects to /ui/v2/login/..., which only the chart's separate
+# `zitadel-login` Deployment serves (port 3000 on the `zitadel-login`
+# Service). Its render is shared by all three install paths: it reads
+# only ExternalDomain, the `zitadel` Service and the `login-client`
+# PAT the setup Job writes, which are the same in each. Route
+# /ui/v2/login to that Service in your ingress. `login = False`
+# leaves the app out (the v0.3 renders), for instances that turn
+# Login V2 off themselves.
+_LOGIN_MANIFEST = "@rules_zitadel//private/manifests:zitadel-login.yaml"
+_LOGIN_DEPLOYS = ["zitadel-login"]
+
+def _login_manifests(login):
+    return [_LOGIN_MANIFEST] if login else []
+
+def _login_deploys(login):
+    return list(_LOGIN_DEPLOYS) if login else []
+
 def zitadel_install(
         name,
         namespace = "zitadel",
+        login = True,
         wait_timeout = "900s",
         **kwargs):
     """Apply the pinned Zitadel manifest into `namespace` and block
@@ -40,17 +60,21 @@ def zitadel_install(
     initial admin user). On cold CI runners with image pulls (~150
     MB Zitadel + ~120 MB Postgres), the full chain can hit 6-8
     minutes.
+
+    `login` (default True) also applies the Login V2 app
+    (`zitadel-login` Deployment + Service on port 3000) and waits for
+    it; see the note above `_LOGIN_MANIFEST`.
     """
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
     extra_crds = kwargs.pop("wait_for_crds", [])
     kubectl_apply(
         name = name,
-        manifests = ["@rules_zitadel//private/manifests:zitadel.yaml"],
+        manifests = ["@rules_zitadel//private/manifests:zitadel.yaml"] + _login_manifests(login),
         namespace = namespace,
         create_namespace = True,
         server_side = True,
-        wait_for_deployments = list(_ZITADEL_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(_ZITADEL_ROLLOUTS) + list(extra_rollouts),
         wait_for_crds = list(extra_crds),
         wait_timeout = wait_timeout,
@@ -60,15 +84,17 @@ def zitadel_install(
 def zitadel_health_check(
         name,
         namespace = "zitadel",
+        login = True,
         **kwargs):
-    """Readiness probe paired with `zitadel_install`."""
+    """Readiness probe paired with `zitadel_install`. Pass the same
+    `login` as the install."""
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
     extra_crds = kwargs.pop("wait_for_crds", [])
     kubectl_apply_health_check(
         name = name,
         namespace = namespace,
-        wait_for_deployments = list(_ZITADEL_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(_ZITADEL_ROLLOUTS) + list(extra_rollouts),
         wait_for_crds = list(extra_crds),
         **kwargs
@@ -90,6 +116,7 @@ _ZITADEL_EXTERNAL_PG_DEPLOYS = [
 def zitadel_install_external_pg(
         name,
         namespace = "zitadel",
+        login = True,
         wait_timeout = "900s",
         **kwargs):
     """Apply Zitadel + a hand-rolled standalone Postgres in
@@ -102,6 +129,9 @@ def zitadel_install_external_pg(
     `postgresql.enabled: false` plus the hand-rolled Postgres
     means there's no chart-bundled StatefulSet here; both Postgres
     and Zitadel are Deployments.
+
+    `login` (default True) also applies the Login V2 app and waits
+    for it, as in `zitadel_install`.
     """
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
@@ -116,11 +146,11 @@ def zitadel_install_external_pg(
         manifests = [
             "@rules_zitadel//private/manifests:postgres-standalone.yaml",
             "@rules_zitadel//private/manifests:zitadel-external-pg.yaml",
-        ],
+        ] + _login_manifests(login),
         namespace = namespace,
         create_namespace = True,
         server_side = True,
-        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(extra_rollouts),
         wait_for_crds = list(extra_crds),
         wait_timeout = wait_timeout,
@@ -130,15 +160,17 @@ def zitadel_install_external_pg(
 def zitadel_health_check_external_pg(
         name,
         namespace = "zitadel",
+        login = True,
         **kwargs):
-    """Readiness probe paired with `zitadel_install_external_pg`."""
+    """Readiness probe paired with `zitadel_install_external_pg`. Pass
+    the same `login` as the install."""
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
     extra_crds = kwargs.pop("wait_for_crds", [])
     kubectl_apply_health_check(
         name = name,
         namespace = namespace,
-        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_EXTERNAL_PG_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(extra_rollouts),
         wait_for_crds = list(extra_crds),
         **kwargs
@@ -171,6 +203,7 @@ _ZITADEL_CNPG_CRDS = [
 def zitadel_install_cnpg(
         name,
         namespace = "zitadel",
+        login = True,
         wait_timeout = "900s",
         **kwargs):
     """Apply a CNPG-managed Postgres Cluster + Zitadel pointed at it.
@@ -193,6 +226,9 @@ def zitadel_install_cnpg(
     the DB is reachable, then setup runs, then `/debug/ready`
     flips to 200. Same 15-minute wait_timeout as the other
     install paths.
+
+    `login` (default True) also applies the Login V2 app and waits
+    for it, as in `zitadel_install`.
     """
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
@@ -202,11 +238,11 @@ def zitadel_install_cnpg(
         manifests = [
             "@rules_zitadel//private/manifests:zitadel-db-cluster.yaml",
             "@rules_zitadel//private/manifests:zitadel-cnpg.yaml",
-        ],
+        ] + _login_manifests(login),
         namespace = namespace,
         create_namespace = True,
         server_side = True,
-        wait_for_deployments = list(_ZITADEL_CNPG_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_CNPG_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(extra_rollouts),
         wait_for_crds = list(_ZITADEL_CNPG_CRDS) + list(extra_crds),
         wait_timeout = wait_timeout,
@@ -216,15 +252,17 @@ def zitadel_install_cnpg(
 def zitadel_health_check_cnpg(
         name,
         namespace = "zitadel",
+        login = True,
         **kwargs):
-    """Readiness probe paired with `zitadel_install_cnpg`."""
+    """Readiness probe paired with `zitadel_install_cnpg`. Pass the
+    same `login` as the install."""
     extra_deploys = kwargs.pop("wait_for_deployments", [])
     extra_rollouts = kwargs.pop("wait_for_rollouts", [])
     extra_crds = kwargs.pop("wait_for_crds", [])
     kubectl_apply_health_check(
         name = name,
         namespace = namespace,
-        wait_for_deployments = list(_ZITADEL_CNPG_DEPLOYS) + list(extra_deploys),
+        wait_for_deployments = list(_ZITADEL_CNPG_DEPLOYS) + _login_deploys(login) + list(extra_deploys),
         wait_for_rollouts = list(extra_rollouts),
         wait_for_crds = list(_ZITADEL_CNPG_CRDS) + list(extra_crds),
         **kwargs

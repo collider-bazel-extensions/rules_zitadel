@@ -21,4 +21,15 @@ def zitadel_install_test_suite(name):
         tags = ["manual"],
     )
     _has_executable_test(name = name + "_executable", target_under_test = ":" + name + "_subject")
-    native.test_suite(name = name, tests = [":" + name + "_executable"])
+
+    # `login = False` leaves out the Login V2 render (the v0.3 shape).
+    zitadel_install(
+        name = name + "_no_login_subject",
+        login = False,
+        tags = ["manual"],
+    )
+    _has_executable_test(name = name + "_no_login_executable", target_under_test = ":" + name + "_no_login_subject")
+    native.test_suite(name = name, tests = [
+        ":" + name + "_executable",
+        ":" + name + "_no_login_executable",
+    ])

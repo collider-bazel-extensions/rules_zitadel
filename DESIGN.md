@@ -465,6 +465,16 @@ isolation."
    v3) in the test matrix. Toolchain code to be written.
 5. **Platforms**: linux x86_64, darwin arm64/x86_64.
 
+## Login V2 (v0.4.0, rules_zitadel#5)
+
+Zitadel v4 requires Login V2 by default, so interactive sign-in needs the chart's separate `zitadel-login` app; every render through v0.3.1 disabled it (`login.enabled: false`), and consumers couldn't re-render because helm is a dev dependency here.
+
+- **One shared render.** `private/manifests/zitadel-login.yaml` is the chart rendered over `zitadel-values.yaml` plus `zitadel-login-values.yaml`, with `--show-only` for the four login templates. Turning `login.enabled` on changes nothing else in the chart's output, and the login templates read only `ExternalDomain`, the `zitadel` Service and the `login-client` PAT, which are identical in all three variants' values, so the three main renders are unchanged and one login render serves every install path.
+- **On by default.** The install macros and health checks take `login = True`, which adds the render and waits for the `zitadel-login` Deployment. Default-on matches Zitadel's default; `login = False` is for instances that turn Login V2 off. A per-variant "with login" render was rejected: three more ~1,000-line files for an identical 188-line difference.
+- **Images by digest.** The login image and the chart's `wait4x` init container (no switch in the chart) are pinned by digest through values (`tag: "<tag>@sha256:..."`), checked against the registries. The other images remain tag-pinned, as before.
+- **Smoke.** Each smoke reads the console's client id from `/ui/console/assets/environment.json`, asks `/oauth/v2/authorize` for a code flow, expects the redirect to `/ui/v2/login/...`, and fetches it from the `zitadel-login` Service, with `curl --connect-to` standing in for an ingress, following the app's own redirects; it expects HTTP 200 HTML still under `/ui/v2/login`. Against a `login = False` install, the check fails.
+- **Not done:** a public render entry point (helm as a consumer dependency), the issue's second ask. It would put rules_helm and the chart download in every consumer's graph; the shipped login render covers the case that motivated it.
+
 ## Release archive contents (v0.3.1)
 
 `tests/` and `tools/` are `export-ignore` (`.gitattributes`): their packages load dev-only modules, which made `@rules_zitadel//...` unloadable for consumers. GitHub's tag tarballs honour it; a `git_override` clone still contains them. `REPO.bazel` `ignore_directories` isn't used because it would also hide them from this repo's own `bazel test`. CI's `consumer` job (`.github/consumer/check.sh`) queries `//...` from the commit's `git archive`. Same fix as rules_kubectl#5 / rules_atlas#12.
