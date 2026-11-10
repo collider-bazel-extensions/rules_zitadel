@@ -91,7 +91,7 @@ runs. Validated on Linux x86\_64 in CI.
 ## Installation
 
 ```python
-bazel_dep(name = "rules_zitadel", version = "0.4.0")
+bazel_dep(name = "rules_zitadel", version = "0.4.1")
 ```
 
 The release archive (the tag tarball) leaves out `tests/` and `tools/`, whose packages load dev-only modules, so `bazel query @rules_zitadel//...` works for consumers (since v0.3.1). A `git_override` clone still contains them; name packages instead (for example `@rules_zitadel//:all`).
@@ -385,7 +385,7 @@ zitadel:
 | Target cluster | Out of scope. | |
 | Zitadel container image | Pulled at runtime. `ghcr.io/zitadel/zitadel:v4.13.0`. | Future: pre-load via `kind_cluster.images`. |
 | Login V2 + `wait4x` images | Pulled at runtime, pinned by digest. | See [Login V2](#login-v2). |
-| PostgreSQL container image | Pulled at runtime. `docker.io/bitnami/postgresql:18.x`. | Bundled Bitnami subchart. |
+| PostgreSQL container image | Pulled at runtime. `docker.io/bitnami/postgresql`, pinned by digest (PostgreSQL 18.6.0) since v0.4.1; the subchart defaults to the moving `latest`. | Bundled Bitnami subchart. Bump the `postgresql.image.digest` in `config/zitadel-values.yaml` and re-render. |
 | `curlimages/curl:8.10.1` (smoke) | Pulled at runtime. | |
 
 ---

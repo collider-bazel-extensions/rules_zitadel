@@ -343,7 +343,7 @@ spec:
       hostIPC: false
       containers:
         - name: postgresql
-          image: registry-1.docker.io/bitnami/postgresql:latest
+          image: registry-1.docker.io/bitnami/postgresql@sha256:b418fd5f001c272aad93ac1febf783f543ee45d8e359d58bd5afc3d2a9b62290
           imagePullPolicy: "IfNotPresent"
           securityContext:
             allowPrivilegeEscalation: false
