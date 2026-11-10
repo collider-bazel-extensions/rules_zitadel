@@ -47,7 +47,9 @@ is behind it.
 `v4.13.0`). The chart bundles Bitnami's `postgresql` subchart at
 `>=16.0.0` (resolves to current 18.x at maintainer-render time).
 Smoke-fixture render — single Zitadel replica, single Postgres
-replica, emptyDir storage, login UI off, TLS off.
+replica, emptyDir storage, TLS off. The Login V2 app (the chart's
+separate `zitadel-login` Deployment) ships as its own render and is
+on by default since v0.4.0; see [Login V2](#login-v2).
 
 > **NOT a production starting point.** Dev-mode-shaped fixture:
 > hardcoded admin password, hardcoded Postgres credentials,
@@ -89,7 +91,7 @@ runs. Validated on Linux x86\_64 in CI.
 ## Installation
 
 ```python
-bazel_dep(name = "rules_zitadel", version = "0.3.1")
+bazel_dep(name = "rules_zitadel", version = "0.4.0")
 ```
 
 The release archive (the tag tarball) leaves out `tests/` and `tools/`, whose packages load dev-only modules, so `bazel query @rules_zitadel//...` works for consumers (since v0.3.1). A `git_override` clone still contains them; name packages instead (for example `@rules_zitadel//:all`).
@@ -137,23 +139,29 @@ itest_service(
 zitadel_install(
     name = "zitadel_install_bin",
     namespace = "zitadel",        # default
+    login = True,                 # default — also apply the Login V2 app
     wait_timeout = "900s",        # default — 15 min
 )
 ```
 
 Expands to a `kubectl_apply(...)` target that:
 
-- Applies `@rules_zitadel//private/manifests:zitadel.yaml`.
+- Applies `@rules_zitadel//private/manifests:zitadel.yaml`, plus
+  `zitadel-login.yaml` when `login = True`.
 - `create_namespace = True`.
 - `server_side = True`.
-- `wait_for_deployments = ["zitadel"]`.
+- `wait_for_deployments = ["zitadel"]`, plus `"zitadel-login"` when
+  `login = True`.
 - `wait_for_rollouts = ["sts/zitadel-postgresql"]`.
 - `wait_timeout = "900s"`.
 
 ### `zitadel_health_check`
 
 Drops into `itest_service.health_check`. Same wait shape with
-`--timeout=0s`.
+`--timeout=0s`. Pass it the same `login` as the install.
+
+All three install macros and their health checks take `login`
+(default `True`) the same way.
 
 ### `zitadel_install_external_pg`
 
@@ -265,6 +273,40 @@ For the management API consumers will:
 v0.1 doesn't exercise the authenticated path — that's a v0.2
 candidate.
 
+### Login V2
+
+Zitadel v4 defaults a new instance to Login V2
+(`DefaultInstance.Features.LoginV2.Required: true`), so every
+browser sign-in redirects to `/ui/v2/login/...`. Only the chart's
+separate Login V2 app serves that path; Zitadel itself returns 404
+for it. Through v0.3.1 every render set `login.enabled: false`, so
+interactive sign-in failed while the APIs and machine PATs worked.
+
+Since v0.4.0, `private/manifests/zitadel-login.yaml` holds the
+chart's login resources (ConfigMap, Deployment, Service,
+ServiceAccount), and every install macro applies it unless
+`login = False`. It is one render for all three variants: it reads
+only `ExternalDomain`, the `zitadel` Service and the `login-client`
+PAT the setup Job writes, which are the same in each.
+
+| Piece | Value |
+|---|---|
+| Service | `zitadel-login.<namespace>:3000` |
+| Path to route | `/ui/v2/login` (route it to the Service above in your ingress; everything else goes to `zitadel:8080`) |
+| `NEXT_PUBLIC_BASE_PATH` | `/ui/v2/login` |
+| Token | the `login-client` Secret's PAT (FirstInstance `Org.LoginClient`, expires 2029-01-01) |
+| `CUSTOM_REQUEST_HEADERS` | `Host` and `X-Zitadel-Public-Host` set to `ExternalDomain` |
+| Login image | `ghcr.io/zitadel/zitadel-login:v4.13.0@sha256:b1048d2652988a32518d5e4a26eecea0dd1db0792e144bd9715c7b96fdf3b1fd` |
+| `wait-for-zitadel` init container | `docker.io/wait4x/wait4x:3.6@sha256:bec7ac18547781d854562c3729d3195c3880116d6758c49fdf4573ad58805f14` (the chart has no switch for it, so it is pinned instead) |
+
+The smokes check it end to end: an authorize request for the
+console redirects to `/ui/v2/login/login`, and the login app (reached
+the way an ingress would route it) serves the sign-in page with
+HTTP 200.
+
+Set `login = False` (on the install and its health check) only if
+your instance turns Login V2 off itself.
+
 ---
 
 ## Gotchas
@@ -342,6 +384,7 @@ zitadel:
 | `kubectl` | Inherited from `rules_kubectl`. | |
 | Target cluster | Out of scope. | |
 | Zitadel container image | Pulled at runtime. `ghcr.io/zitadel/zitadel:v4.13.0`. | Future: pre-load via `kind_cluster.images`. |
+| Login V2 + `wait4x` images | Pulled at runtime, pinned by digest. | See [Login V2](#login-v2). |
 | PostgreSQL container image | Pulled at runtime. `docker.io/bitnami/postgresql:18.x`. | Bundled Bitnami subchart. |
 | `curlimages/curl:8.10.1` (smoke) | Pulled at runtime. | |
 
@@ -354,7 +397,9 @@ PRs welcome. Conventions match the sibling rule sets:
 - New rules need an analysis test in `tests/analysis_tests.bzl`.
 - Bumping the pinned chart version: edit `tools/versions.bzl`,
   add a `helm_template + sh_binary` block in `tools/BUILD.bazel`,
-  run `bash tools/render_zitadel.sh <new-version>`, commit.
+  run `bash tools/render_zitadel.sh <new-version>`, commit. The
+  login render (`render_writeback_login_<ver>`) is part of it;
+  re-check the two image digests in `config/zitadel-login-values.yaml`.
 - `MODULE.bazel.lock` is intentionally not committed.
 
 ### Help wanted
@@ -367,8 +412,6 @@ PRs welcome. Conventions match the sibling rule sets:
   point at a separately-deployed Postgres) — v0.2 candidate
 - Compose with [`rules_cloudnativepg`](https://github.com/collider-bazel-extensions/rules_cloudnativepg)
   for production-shaped HA Postgres — v0.3 candidate
-- Login UI smoke (Zitadel chart 9.x splits the login flow into
-  its own Deployment; v0.1 disables it)
 - SAML SP smoke (Zitadel as IdP for a SAML test client)
 - TLS-on render variant (chart wires self-signed certs via
   cert-manager — compose with `rules_certmanager`)

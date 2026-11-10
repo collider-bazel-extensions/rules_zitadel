@@ -74,3 +74,39 @@ sh_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+# ---- 9.34.0 Login V2 app ----------------------------------------------------
+# Only the chart's login templates (ConfigMap, Deployment, Service,
+# ServiceAccount), with the login app enabled and its images pinned
+# by digest. The inputs those templates read (ExternalDomain, the
+# Zitadel Service, the login-client PAT) are the same in all three
+# variants, so one render serves zitadel_install,
+# zitadel_install_external_pg and zitadel_install_cnpg.
+
+helm_template(
+    name = "render_zitadel_login_9_34_0",
+    chart = ["@zitadel_chart_9_34_0//:files"],
+    values = [
+        "//config:zitadel-values.yaml",
+        "//config:zitadel-login-values.yaml",
+    ],
+    namespace = "zitadel",
+    release_name = "zitadel",
+    helm_template_args = [
+        "--show-only=templates/configmap_login.yaml",
+        "--show-only=templates/deployment_login.yaml",
+        "--show-only=templates/service_login.yaml",
+        "--show-only=templates/serviceaccount_login.yaml",
+    ],
+)
+
+sh_binary(
+    name = "render_writeback_login_9_34_0",
+    srcs = ["writeback.sh"],
+    data = [":render_zitadel_login_9_34_0"],
+    args = [
+        "$(rootpath :render_zitadel_login_9_34_0)",
+        "private/manifests/zitadel-login.yaml",
+    ],
+    visibility = ["//visibility:public"],
+)

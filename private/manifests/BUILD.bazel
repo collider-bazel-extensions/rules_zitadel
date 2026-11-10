@@ -6,4 +6,5 @@ exports_files([
     "postgres-standalone.yaml",
     "zitadel-cnpg.yaml",
     "zitadel-db-cluster.yaml",
+    "zitadel-login.yaml",
 ])
