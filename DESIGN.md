@@ -478,3 +478,7 @@ Zitadel v4 requires Login V2 by default, so interactive sign-in needs the chart'
 ## Release archive contents (v0.3.1)
 
 `tests/` and `tools/` are `export-ignore` (`.gitattributes`): their packages load dev-only modules, which made `@rules_zitadel//...` unloadable for consumers. GitHub's tag tarballs honour it; a `git_override` clone still contains them. `REPO.bazel` `ignore_directories` isn't used because it would also hide them from this repo's own `bazel test`. CI's `consumer` job (`.github/consumer/check.sh`) queries `//...` from the commit's `git archive`. Same fix as rules_kubectl#5 / rules_atlas#12.
+
+## Bundled Postgres image pinned (v0.4.1)
+
+The Bitnami PostgreSQL subchart (18.5.5) defaults to `bitnami/postgresql:latest`: since 2025 Bitnami publishes only `latest` for free, so the bundled variant's database changed whenever Bitnami pushed, and a new major would have arrived unannounced. `config/zitadel-values.yaml` sets `postgresql.image.digest` to the multi-arch index digest `latest` pointed at on 2026-11-10 (PostgreSQL 18.6.0, built 2026-11-02, checked against docker.io); with a digest the chart renders `bitnami/postgresql@sha256:...` and drops the tag. Only `private/manifests/zitadel.yaml` changes; the external-Postgres and CNPG variants don't render the subchart. To bump, take the new index digest, check the version, and re-run `//tools:render_writeback_9_34_0`.
