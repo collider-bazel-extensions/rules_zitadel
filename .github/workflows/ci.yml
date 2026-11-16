@@ -80,7 +80,7 @@ jobs:
 
   smoke_external_pg:
     # End-to-end: kind + Zitadel + standalone Postgres Deployment
-    # (postgres:18-alpine, hand-rolled). Same OIDC round-trip as
+    # (postgres:18.7-alpine by digest, hand-rolled). Same OIDC round-trip as
     # the bundled smoke; proves the external-DB shape end-to-end.
     name: smoke (ubuntu-latest, external Postgres)
     runs-on: ubuntu-latest
