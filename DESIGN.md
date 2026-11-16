@@ -482,3 +482,7 @@ Zitadel v4 requires Login V2 by default, so interactive sign-in needs the chart'
 ## Bundled Postgres image pinned (v0.4.1)
 
 The Bitnami PostgreSQL subchart (18.5.5) defaults to `bitnami/postgresql:latest`: since 2025 Bitnami publishes only `latest` for free, so the bundled variant's database changed whenever Bitnami pushed, and a new major would have arrived unannounced. `config/zitadel-values.yaml` sets `postgresql.image.digest` to the multi-arch index digest `latest` pointed at on 2026-11-10 (PostgreSQL 18.6.0, built 2026-11-02, checked against docker.io); with a digest the chart renders `bitnami/postgresql@sha256:...` and drops the tag. Only `private/manifests/zitadel.yaml` changes; the external-Postgres and CNPG variants don't render the subchart. To bump, take the new index digest, check the version, and re-run `//tools:render_writeback_9_34_0`.
+
+## Standalone Postgres image pinned (v0.4.2)
+
+`zitadel_install_external_pg`'s hand-rolled Deployment (`private/manifests/postgres-standalone.yaml`) ran `postgres:18-alpine`, a tag the Docker Official Images rebuild and move on every patch and base-image update. It now names `postgres:18.7-alpine@sha256:b6972e11…`: the multi-arch index `18-alpine` pointed to on 2026-11-16, which is also `18.7-alpine`. With both a tag and a digest the kubelet pulls by digest; the tag is there for the reader. Same reasoning as v0.4.1's Bitnami pin. The file is hand-written, not rendered, so there is nothing to re-render.

@@ -8,7 +8,7 @@ Three install paths:
 - **`zitadel_install`** (v0.1) — Zitadel + chart-bundled Bitnami
   Postgres subchart. Single self-contained kubectl-apply.
 - **`zitadel_install_external_pg`** (v0.2) — Zitadel pointed at a
-  hand-rolled standalone `postgres:18-alpine` Deployment. Drops
+  hand-rolled standalone `postgres:18.7-alpine` Deployment. Drops
   the bundled subchart; closer to production shape.
 - **`zitadel_install_cnpg`** (v0.3) — Zitadel pointed at a
   [CNPG](https://cloudnative-pg.io/)-managed `Cluster` CR. Most
@@ -91,7 +91,7 @@ runs. Validated on Linux x86\_64 in CI.
 ## Installation
 
 ```python
-bazel_dep(name = "rules_zitadel", version = "0.4.1")
+bazel_dep(name = "rules_zitadel", version = "0.4.2")
 ```
 
 The release archive (the tag tarball) leaves out `tests/` and `tools/`, whose packages load dev-only modules, so `bazel query @rules_zitadel//...` works for consumers (since v0.3.1). A `git_override` clone still contains them; name packages instead (for example `@rules_zitadel//:all`).
@@ -177,7 +177,8 @@ Same shape as `zitadel_install` but applies **two** manifests in
 a single `kubectl_apply` call:
 
 1. `@rules_zitadel//private/manifests:postgres-standalone.yaml` —
-   a hand-rolled `postgres:18-alpine` Deployment + Service +
+   a hand-rolled `postgres:18.7-alpine` Deployment (pinned by
+   digest since v0.4.2) + Service +
    Secret in the same namespace as Zitadel.
 2. `@rules_zitadel//private/manifests:zitadel-external-pg.yaml` —
    Zitadel chart re-rendered with `postgresql.enabled: false` and
@@ -386,6 +387,7 @@ zitadel:
 | Zitadel container image | Pulled at runtime. `ghcr.io/zitadel/zitadel:v4.13.0`. | Future: pre-load via `kind_cluster.images`. |
 | Login V2 + `wait4x` images | Pulled at runtime, pinned by digest. | See [Login V2](#login-v2). |
 | PostgreSQL container image | Pulled at runtime. `docker.io/bitnami/postgresql`, pinned by digest (PostgreSQL 18.6.0) since v0.4.1; the subchart defaults to the moving `latest`. | Bundled Bitnami subchart. Bump the `postgresql.image.digest` in `config/zitadel-values.yaml` and re-render. |
+| Standalone PostgreSQL image (`zitadel_install_external_pg`) | Pulled at runtime. `postgres:18.7-alpine`, pinned by digest since v0.4.2 (through v0.4.1 the moving `18-alpine`). | Bump the `image:` in `private/manifests/postgres-standalone.yaml` to the new tag's multi-arch index digest. |
 | `curlimages/curl:8.10.1` (smoke) | Pulled at runtime. | |
 
 ---
